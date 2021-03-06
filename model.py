@@ -6,8 +6,6 @@ from typing import Callable, List, Optional
 
 
 # 调整通道为最靠近8的整数倍，利于计算机计算
-
-
 def _make_divisible(ch, divisor=8, min_ch=None):
     if min_ch is None:
         min_ch = divisor
@@ -26,30 +24,20 @@ class ConvBNActivation(nn.Sequential):
                  kernel_size: int = 3,
                  stride: int = 1,
                  groups: int = 1,
-                 norm_layer: Optional[Callable[...,
-                                               nn.Module]] = None,
-                 activation_layer: Optional[Callable[...,
-                                                     nn.Module]] = None):
-        padding = (kernel_size - 1) / 2
+                 norm_layer: Optional[Callable[..., nn.Module]] = None,
+                 activation_layer: Optional[Callable[..., nn.Module]] = None):
+        padding = (kernel_size - 1) // 2
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         if activation_layer is None:
             activation_layer = nn.ReLU6
 
-        super(
-            ConvBNActivation,
-            self).__init__(
-            nn.Conv2d(
-                in_channels=in_planes,
-                out_channels=out_planes,
-                kernel_size=kernel_size,
-                stride=stride,
-                padding=padding,
-                groups=groups,
-                bias=False),
-            norm_layer(out_planes),
-            activation_layer(
-                inplace=True))
+        super(ConvBNActivation, self).__init__(
+            nn.Conv2d(in_channels=in_planes, out_channels=out_planes, kernel_size=kernel_size,
+                      stride=stride,
+                      padding=padding,
+                      groups=groups,
+                      bias=False), norm_layer(out_planes), activation_layer(inplace=True))
 
 
 # SE模块:squeeze+excitaion
@@ -60,9 +48,9 @@ class SqueezeExcitaion(nn.Module):
         super(SqueezeExcitaion, self).__init__()
         squeeze_c = _make_divisible(input_c // squeeze_factor, 8)
         self.fc1 = nn.Conv2d(input_c, squeeze_c, 1)
-        self.fc1 = nn.Conv2d(squeeze_c, input_c, 1)
+        self.fc2 = nn.Conv2d(squeeze_c, input_c, 1)
 
-    def forwar(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         # squeeze:通过全局池化压缩为同通道，长宽为1x1的数据
         scale = F.adaptive_avg_pool2d(x, output_size=(1, 1))
 
@@ -72,7 +60,7 @@ class SqueezeExcitaion(nn.Module):
         scale = F.relu(scale, inplace=True)
 
         # 扩展为4倍的通道
-        scale = self.fc1(scale)
+        scale = self.fc2(scale)
         scale = F.hardsigmoid(scale, inplace=True)
 
         # 重新设置权重
@@ -112,7 +100,7 @@ class InvertedResidualConfig:
         self.stride = stride
 
     @staticmethod
-    def adjust_channels(channels: int, width_multi: float):
+    def _adjust_channels(channels: int, width_multi: float):
         return _make_divisible(channels * width_multi, 8)
 
 
@@ -235,7 +223,7 @@ class MobileNetV3(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal(m.weight, mode='fan_in')
+                nn.init.kaiming_normal_(m.weight, mode='fan_in')
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
@@ -265,7 +253,7 @@ def mobilenet_v3_large(num_classes: int = 1000,
                        reduced_tail: bool = False) -> MobileNetV3:
     width_multi = 1.0
     bneck_conf = partial(InvertedResidualConfig, width_multi=width_multi)
-    adjust_channels = partial(InvertedResidualConfig.adjust_channels, width_multi=width_multi)
+    adjust_channels = partial(InvertedResidualConfig._adjust_channels, width_multi=width_multi)
 
     reduce_divider = 2 if reduced_tail else 1
 
@@ -292,11 +280,13 @@ def mobilenet_v3_large(num_classes: int = 1000,
                        num_classes=num_classes)
 
 
+# https://download.pytorch.org/models/mobilenet_v3_large-8738ca79.pth
+
 def mobilenet_v3_small(num_classes: int = 1000,
                        reduced_tail: bool = False) -> MobileNetV3:
     width_multi = 1.0
     bneck_conf = partial(InvertedResidualConfig, width_multi=width_multi)
-    adjust_channels = partial(InvertedResidualConfig.adjust_channels(), width_multi=width_multi)
+    adjust_channels = partial(InvertedResidualConfig._adjust_channels(), width_multi=width_multi)
 
     reduce_divider = 2 if reduced_tail else 1
 
